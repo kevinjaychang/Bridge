@@ -15,5 +15,5 @@ upload:
 			exit 1; \
 		fi; \
 		git commit -m "$$msg"; \
-		git push; \
+		git push origin master; \
 	fi

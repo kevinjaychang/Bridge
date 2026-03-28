@@ -1,28 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Flame, LogOut, PlusSquare, UserRound } from "lucide-react";
-import { AUTH_EVENT, getSessionUser, openAuthModal, signOutUser } from "@/lib/auth";
+import { useAuthState } from "@/components/auth/AuthProvider";
+import { openAuthModal, signOutUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import type { User } from "@/types/user";
 
 export default function TopHeader() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    function syncUser() {
-      setCurrentUser(getSessionUser());
-    }
-
-    syncUser();
-    window.addEventListener("storage", syncUser);
-    window.addEventListener(AUTH_EVENT, syncUser);
-
-    return () => {
-      window.removeEventListener("storage", syncUser);
-      window.removeEventListener(AUTH_EVENT, syncUser);
-    };
-  }, []);
+  const { currentUser } = useAuthState();
 
   return (
     <header className="sticky top-0 z-20 border-b border-white/60 bg-white/75 backdrop-blur-xl">
@@ -38,40 +22,52 @@ export default function TopHeader() {
             </div>
           </a>
           <nav className="hidden items-center gap-2 sm:flex">
-            <a
-              href="/"
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              <Flame className="h-4 w-4" />
-              Feed
-            </a>
-            <a
-              href="/submit"
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              <PlusSquare className="h-4 w-4" />
-              Create post
-            </a>
             {currentUser ? (
               <>
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                  <UserRound className="h-4 w-4 text-sky-600" />
+                <a
+                  href="/"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                >
+                  <Flame className="h-4 w-4" />
+                  Feed
+                </a>
+                <a
+                  href="/submit"
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium !text-white transition hover:bg-slate-800"
+                >
+                  <PlusSquare className="h-4 w-4 text-white" />
+                  <span className="text-white">Create post</span>
+                </a>
+                <a
+                  href="/profile"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <UserRound className="h-4 w-4" />
                   {currentUser.username}
-                </div>
-                <Button variant="ghost" size="sm" onClick={signOutUser}>
+                </a>
+                <Button variant="ghost" size="sm" onClick={() => void signOutUser()}>
                   <LogOut className="h-4 w-4" />
                   Sign out
                 </Button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => openAuthModal("signin")}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
-              >
-                <UserRound className="h-4 w-4" />
-                Sign in
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => openAuthModal("signin")}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <UserRound className="h-4 w-4" />
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAuthModal("signup")}
+                  className="inline-flex items-center rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-400"
+                >
+                  Sign up
+                </button>
+              </>
             )}
           </nav>
         </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowBigDown, ArrowBigUp, ArrowRightLeft, Flame, MapPin, MessageSquare, Users2 } from "lucide-react";
+import MarkdownContent, { getMarkdownPreview } from "@/components/content/MarkdownContent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -22,6 +23,7 @@ export default function IssueCard({ issue, onVote }: IssueCardProps) {
   const score = issue.upvotes - issue.downvotes;
   const [showCounterPerspective, setShowCounterPerspective] = useState(false);
   const topClusters = issue.clusterMix.slice(0, 3);
+  const previewMarkdown = getMarkdownPreview(issue.body);
 
   return (
     <Card className="overflow-hidden rounded-[24px] border-slate-200/80 bg-white shadow-[0_18px_40px_-30px_rgba(15,23,42,0.3)]">
@@ -67,9 +69,7 @@ export default function IssueCard({ issue, onVote }: IssueCardProps) {
                   <Flame className="h-3.5 w-3.5" />
                   Consensus {issue.consensusScore}
                 </div>
-                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Bipartisan rank
-                </div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">Feed rank</div>
               </div>
               <a href={`/issues/${issue.id}`} className="block transition hover:opacity-85">
                 <h2 className="text-lg font-semibold leading-snug text-slate-950">{issue.title}</h2>
@@ -82,15 +82,13 @@ export default function IssueCard({ issue, onVote }: IssueCardProps) {
 
           <CardContent className="space-y-3.5">
             <a href={`/issues/${issue.id}`} className="block transition hover:opacity-90">
-              <p className="line-clamp-3 text-sm leading-6 text-slate-700">{issue.body}</p>
+              <MarkdownContent markdown={previewMarkdown} compact className="line-clamp-4 text-sm" />
             </a>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Bridge Meter</div>
-                <div className="text-xs font-semibold text-slate-900">
-                  {issue.opposingViewSupport}% opposing-cluster support
-                </div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Cross-community support</div>
+                <div className="text-xs font-semibold text-slate-900">{issue.opposingViewSupport}% outside-core support</div>
               </div>
               <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
                 <div
@@ -110,7 +108,7 @@ export default function IssueCard({ issue, onVote }: IssueCardProps) {
             {showCounterPerspective ? (
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-500">
-                  Counter-perspective from {issue.counterPerspective.cluster}
+                  Other viewpoint from {issue.counterPerspective.cluster}
                 </div>
                 <div className="mt-1.5 text-sm font-semibold text-slate-900">{issue.counterPerspective.author}</div>
                 <p className="mt-1.5 text-sm leading-6 text-slate-700">{issue.counterPerspective.summary}</p>
@@ -142,11 +140,11 @@ export default function IssueCard({ issue, onVote }: IssueCardProps) {
                 className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-2 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
               >
                 <ArrowRightLeft className="h-4 w-4" />
-                {showCounterPerspective ? "Hide Counter-Perspective" : "View Counter-Perspective"}
+                {showCounterPerspective ? "Hide other viewpoint" : "View other viewpoint"}
               </button>
               <div className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-orange-700">
                 <Flame className="h-3.5 w-3.5" />
-                Bridge-ranked thread
+                Consensus-ranked thread
               </div>
             </div>
           </CardFooter>

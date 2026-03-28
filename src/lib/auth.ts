@@ -1,96 +1,99 @@
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { User } from "@/types/user";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const ACCOUNTS_KEY = "bridge-protocol.accounts";
-const SESSION_KEY = "bridge-protocol.session";
 export const AUTH_EVENT = "bridge-protocol-auth-changed";
 export const AUTH_MODAL_EVENT = "bridge-protocol-auth-modal";
 
-interface StoredAccount {
-  id: string;
-  username: string;
-  email: string;
-  avatar?: string;
-  authProvider: "local" | "google";
-  password?: string;
-  createdAt: Date;
+let authSubscriptionBound = false;
+
+function hasWindow() {
+  return typeof window !== "undefined";
 }
 
-const hasWindow = typeof window !== "undefined";
-
 function emitAuthChange() {
-  if (!hasWindow) {
+  if (!hasWindow()) {
     return;
   }
 
   window.dispatchEvent(new Event(AUTH_EVENT));
 }
 
-function readJson<T>(key: string, fallback: T): T {
-  if (!hasWindow) {
-    return fallback;
-  }
+function deriveUsername(user: SupabaseUser) {
+  const metadata = user.user_metadata ?? {};
+  const candidate =
+    metadata.username ??
+    metadata.user_name ??
+    metadata.full_name ??
+    metadata.name ??
+    user.email?.split("@")[0] ??
+    "Bridge User";
 
-  const rawValue = window.localStorage.getItem(key);
-  if (!rawValue) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(rawValue) as T;
-  } catch {
-    return fallback;
-  }
+  return String(candidate).trim() || "Bridge User";
 }
 
-function writeJson(key: string, value: unknown) {
-  if (!hasWindow) {
+function deriveProvider(user: SupabaseUser): User["authProvider"] {
+  const provider =
+    user.app_metadata?.provider ??
+    user.identities?.[0]?.provider ??
+    "email";
+
+  return provider === "google" ? "google" : "email";
+}
+
+function mapSupabaseUser(user: SupabaseUser): User {
+  return {
+    id: user.id,
+    username: deriveUsername(user),
+    email: user.email ?? "",
+    avatar: user.user_metadata?.avatar_url ?? user.user_metadata?.picture,
+    authProvider: deriveProvider(user),
+    createdAt: new Date(user.created_at),
+  };
+}
+
+function ensureAuthSubscription() {
+  if (!hasWindow() || authSubscriptionBound) {
     return;
   }
 
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return;
+  }
 
-function toStoredAccount(account: StoredAccount): StoredAccount {
-  return {
-    ...account,
-    createdAt: new Date(account.createdAt),
-  };
-}
+  supabase.auth.onAuthStateChange(() => {
+    emitAuthChange();
+  });
 
-function sanitizeUser(account: StoredAccount): User {
-  return {
-    id: account.id,
-    username: account.username,
-    email: account.email,
-    avatar: account.avatar,
-    authProvider: account.authProvider,
-    createdAt: new Date(account.createdAt),
-  };
+  authSubscriptionBound = true;
 }
 
 export function openAuthModal(mode: "signin" | "signup" = "signin") {
-  if (!hasWindow) {
+  if (!hasWindow()) {
     return;
   }
 
+  ensureAuthSubscription();
   window.dispatchEvent(new CustomEvent(AUTH_MODAL_EVENT, { detail: { mode } }));
 }
 
-export function getStoredAccounts(): StoredAccount[] {
-  return readJson<StoredAccount[]>(ACCOUNTS_KEY, []).map(toStoredAccount);
-}
+export async function getSessionUser() {
+  ensureAuthSubscription();
 
-export function getSessionUser(): User | null {
-  const storedUser = readJson<StoredAccount | null>(SESSION_KEY, null);
-
-  if (!storedUser) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
     return null;
   }
 
-  return sanitizeUser(toStoredAccount(storedUser));
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  return session?.user ? mapSupabaseUser(session.user) : null;
 }
 
-export function signUpUser({
+export async function signUpUser({
   username,
   email,
   password,
@@ -99,6 +102,11 @@ export function signUpUser({
   email: string;
   password: string;
 }) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return { error: "Supabase auth is not configured." };
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   const trimmedUsername = username.trim();
   const trimmedPassword = password.trim();
@@ -107,100 +115,87 @@ export function signUpUser({
     return { error: "Fill in username, email, and password." };
   }
 
-  const accounts = getStoredAccounts();
-  if (accounts.some((account) => account.email.toLowerCase() === normalizedEmail)) {
-    return { error: "An account with that email already exists." };
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
+    password: trimmedPassword,
+    options: {
+      data: {
+        username: trimmedUsername,
+      },
+    },
+  });
+
+  if (error) {
+    return { error: error.message };
   }
 
-  const account: StoredAccount = {
-    id: crypto.randomUUID(),
-    username: trimmedUsername,
-    email: normalizedEmail,
-    authProvider: "local",
-    password: trimmedPassword,
-    createdAt: new Date(),
-  };
-
-  const nextAccounts = [account, ...accounts];
-  writeJson(ACCOUNTS_KEY, nextAccounts);
-  writeJson(SESSION_KEY, account);
   emitAuthChange();
 
-  return { user: sanitizeUser(account) };
+  if (!data.user) {
+    return { error: "Account created, but the session user could not be loaded yet." };
+  }
+
+  return { user: mapSupabaseUser(data.user) };
 }
 
-export function signInUser({ email, password }: { email: string; password: string }) {
+export async function signInUser({ email, password }: { email: string; password: string }) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return { error: "Supabase auth is not configured." };
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   const trimmedPassword = password.trim();
-  const accounts = getStoredAccounts();
 
-  const account = accounts.find(
-    (entry) =>
-      entry.authProvider === "local" &&
-      entry.email.toLowerCase() === normalizedEmail &&
-      entry.password === trimmedPassword,
-  );
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalizedEmail,
+    password: trimmedPassword,
+  });
 
-  if (!account) {
-    return { error: "Email or password did not match a saved local user." };
+  if (error) {
+    return { error: error.message };
   }
 
-  writeJson(SESSION_KEY, account);
   emitAuthChange();
 
-  return { user: sanitizeUser(account) };
-}
-
-export function signInWithGoogle({
-  googleId,
-  email,
-  name,
-  picture,
-}: {
-  googleId: string;
-  email: string;
-  name: string;
-  picture?: string;
-}) {
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (!googleId || !normalizedEmail || !name.trim()) {
-    return { error: "Google did not return the required account details." };
+  if (!data.user) {
+    return { error: "Sign-in succeeded, but the session user could not be loaded." };
   }
 
-  const accounts = getStoredAccounts();
-  const existingAccount = accounts.find((account) => account.email.toLowerCase() === normalizedEmail);
-
-  const account: StoredAccount = existingAccount
-    ? {
-        ...existingAccount,
-        username: name.trim(),
-        email: normalizedEmail,
-        avatar: picture,
-        authProvider: "google",
-      }
-    : {
-        id: googleId,
-        username: name.trim(),
-        email: normalizedEmail,
-        avatar: picture,
-        authProvider: "google",
-        createdAt: new Date(),
-      };
-
-  const nextAccounts = [account, ...accounts.filter((entry) => entry.email.toLowerCase() !== normalizedEmail)];
-  writeJson(ACCOUNTS_KEY, nextAccounts);
-  writeJson(SESSION_KEY, account);
-  emitAuthChange();
-
-  return { user: sanitizeUser(account) };
+  return { user: mapSupabaseUser(data.user) };
 }
 
-export function signOutUser() {
-  if (!hasWindow) {
+export async function signInWithGoogle() {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return { error: "Supabase auth is not configured." };
+  }
+
+  const redirectTo = hasWindow() ? window.location.href : undefined;
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo,
+      queryParams: {
+        prompt: "select_account",
+      },
+    },
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { ok: true };
+}
+
+export async function signOutUser() {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
     return;
   }
 
-  window.localStorage.removeItem(SESSION_KEY);
+  await supabase.auth.signOut();
   emitAuthChange();
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEventHandler } from "react";
 import { CircleAlert, LockKeyhole, X } from "lucide-react";
 import {
   AUTH_MODAL_EVENT,
@@ -13,42 +14,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const GOOGLE_SCRIPT_ID = "google-identity-services";
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-
 const emptyAuthForm = {
   username: "",
   email: "",
   password: "",
 };
 
-function parseJwtPayload(credential: string) {
-  const payload = credential.split(".")[1];
-  if (!payload) {
-    return null;
-  }
-
-  try {
-    const decoded = window.atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decoded) as {
-      sub?: string;
-      email?: string;
-      name?: string;
-      picture?: string;
-    };
-  } catch {
-    return null;
-  }
-}
-
 export default function AuthModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authForm, setAuthForm] = useState(emptyAuthForm);
   const [authError, setAuthError] = useState("");
-  const googleButtonRef = useRef<HTMLDivElement | null>(null);
-
-  const googleReady = useMemo(() => Boolean(GOOGLE_CLIENT_ID), []);
 
   useEffect(() => {
     function handleOpen(event: Event) {
@@ -85,100 +61,18 @@ export default function AuthModal() {
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen || !googleReady || !googleButtonRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-
-    function renderGoogleButton() {
-      if (cancelled || !googleButtonRef.current || !window.google || !GOOGLE_CLIENT_ID) {
-        return;
-      }
-
-      googleButtonRef.current.innerHTML = "";
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: ({ credential }) => {
-          if (!credential) {
-            setAuthError("Google sign-in did not return a valid credential.");
-            return;
-          }
-
-          const payload = parseJwtPayload(credential);
-          if (!payload?.sub || !payload.email || !payload.name) {
-            setAuthError("Google sign-in returned incomplete profile details.");
-            return;
-          }
-
-          const result = signInWithGoogle({
-            googleId: payload.sub,
-            email: payload.email,
-            name: payload.name,
-            picture: payload.picture,
-          });
-
-          if ("error" in result) {
-            setAuthError(result.error);
-            return;
-          }
-
-          setAuthForm(emptyAuthForm);
-          setAuthError("");
-          setIsOpen(false);
-        },
-      });
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: "outline",
-        size: "large",
-        shape: "pill",
-        text: "continue_with",
-        width: 320,
-        logo_alignment: "left",
-      });
-    }
-
-    if (window.google) {
-      renderGoogleButton();
-      return;
-    }
-
-    const existingScript = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
-    if (existingScript) {
-      existingScript.addEventListener("load", renderGoogleButton, { once: true });
-      return () => {
-        cancelled = true;
-        existingScript.removeEventListener("load", renderGoogleButton);
-      };
-    }
-
-    const script = document.createElement("script");
-    script.id = GOOGLE_SCRIPT_ID;
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = renderGoogleButton;
-    document.head.appendChild(script);
-
-    return () => {
-      cancelled = true;
-      script.removeEventListener("load", renderGoogleButton);
-    };
-  }, [googleReady, isOpen]);
-
   function closeModal() {
     setIsOpen(false);
     setAuthError("");
   }
 
-  function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+  const handleAuthSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
 
     const result =
       authMode === "signup"
-        ? signUpUser(authForm)
-        : signInUser({ email: authForm.email, password: authForm.password });
+        ? await signUpUser(authForm)
+        : await signInUser({ email: authForm.email, password: authForm.password });
 
     if ("error" in result) {
       setAuthError(result.error);
@@ -187,6 +81,18 @@ export default function AuthModal() {
 
     setAuthError("");
     setAuthForm(emptyAuthForm);
+    setIsOpen(false);
+  };
+
+  async function handleGoogleSignIn() {
+    const result = await signInWithGoogle();
+
+    if ("error" in result) {
+      setAuthError(result.error);
+      return;
+    }
+
+    setAuthError("");
     setIsOpen(false);
   }
 
@@ -209,7 +115,7 @@ export default function AuthModal() {
                 {authMode === "signup" ? "Create your account" : "Sign in to Bridge"}
               </CardTitle>
               <CardDescription>
-                Use Google for one-click access, or continue with a browser-local demo account.
+                Use Google for one-click access, or continue with an email/password account backed by Supabase Auth.
               </CardDescription>
             </div>
             <Button variant="ghost" size="icon" aria-label="Close sign-in modal" onClick={closeModal}>
@@ -246,12 +152,12 @@ export default function AuthModal() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
-            <div ref={googleButtonRef} className="min-h-11" />
-            {!googleReady ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Google sign-in is disabled until <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> is set.
-              </div>
-            ) : null}
+            <Button type="button" variant="outline" className="w-full" onClick={handleGoogleSignIn}>
+              Continue with Google
+            </Button>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Authentication now runs through Supabase Auth instead of browser-local demo accounts.
+            </div>
           </div>
 
           <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-slate-400">

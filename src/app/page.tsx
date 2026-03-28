@@ -1,55 +1,53 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   BarChart3,
+  BriefcaseBusiness,
+  Building2,
+  Cpu,
+  GraduationCap,
   Flame,
-  Gauge,
+  Globe2,
+  HeartPulse,
   Layers3,
   LockKeyhole,
-  Menu,
   MessageSquareText,
   Newspaper,
   Shield,
-  Sparkles,
   TrendingUp,
   Users2,
-  X,
 } from "lucide-react";
 import AuthModal from "@/components/auth/AuthModal";
+import { useAuthState } from "@/components/auth/AuthProvider";
 import IssueCard from "@/components/feed/IssueCard";
+import AppSidebar from "@/components/navigation/AppSidebar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AUTH_EVENT, getSessionUser, openAuthModal } from "@/lib/auth";
-import { getStoredIssues, ISSUES_EVENT, updateIssue } from "@/lib/issues";
-import type { IssuePost, SocialCluster } from "@/types/issue";
-import type { User } from "@/types/user";
+import { openAuthModal } from "@/lib/auth";
+import { ISSUES_EVENT, listIssues, voteOnIssue } from "@/lib/issues";
+import type { IssueCategory, IssuePost } from "@/types/issue";
 
-const sidebarLinks = [
-  { label: "Consensus feed", icon: Newspaper },
-  { label: "Bridge leaders", icon: TrendingUp },
-  { label: "Policy watch", icon: Shield },
-  { label: "Cross-cluster ideas", icon: Sparkles },
+const topCategories: Array<{
+  label: string;
+  value: "All" | IssueCategory;
+  icon: typeof Newspaper;
+}> = [
+  { label: "Trending", value: "All", icon: Newspaper },
+  { label: "Economy", value: "Economy", icon: BriefcaseBusiness },
+  { label: "Healthcare", value: "Healthcare", icon: HeartPulse },
+  { label: "Immigration", value: "Immigration", icon: Globe2 },
+  { label: "Climate", value: "Climate", icon: Shield },
+  { label: "Education", value: "Education", icon: GraduationCap },
+  { label: "Technology", value: "Technology", icon: Cpu },
+  { label: "Local Policy", value: "All", icon: Building2 },
 ];
-
-const defaultCluster: SocialCluster = "Pragmatic Moderates";
-
-function buildBridgeStatus(user: User | null) {
-  return {
-    displayName: user?.username ?? "Guest observer",
-    reputationScore: user ? 82 : 64,
-    reliability: user ? 0.78 : 0.61,
-    cluster: user?.username ? "Civic Reformers" : defaultCluster,
-  } as const;
-}
 
 export default function Home() {
   const [issues, setIssues] = useState<IssuePost[]>([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
-
-  const bridgeStatus = useMemo(() => buildBridgeStatus(currentUser), [currentUser]);
+  const [activeCategory, setActiveCategory] = useState<"All" | IssueCategory>("All");
+  const { currentUser } = useAuthState();
 
   const summary = useMemo(() => {
     const issueCount = issues.length;
@@ -74,220 +72,95 @@ export default function Home() {
   const consensusFeed = useMemo(
     () =>
       issues
+        .filter((issue) => (activeCategory === "All" ? true : issue.category === activeCategory))
         .slice()
         .sort((a, b) => b.consensusScore - a.consensusScore || b.opposingViewSupport - a.opposingViewSupport),
-    [issues],
+    [activeCategory, issues],
   );
 
   useEffect(() => {
-    function syncUser() {
-      setCurrentUser(getSessionUser());
+    async function syncIssues() {
+      setIssues(await listIssues());
     }
 
-    function syncIssues() {
-      setIssues(getStoredIssues());
+    function handleIssuesChange() {
+      void syncIssues();
     }
 
-    syncUser();
-    syncIssues();
-    window.addEventListener("storage", syncUser);
-    window.addEventListener(AUTH_EVENT, syncUser);
-    window.addEventListener(ISSUES_EVENT, syncIssues);
+    void syncIssues();
+    window.addEventListener(ISSUES_EVENT, handleIssuesChange);
 
     return () => {
-      window.removeEventListener("storage", syncUser);
-      window.removeEventListener(AUTH_EVENT, syncUser);
-      window.removeEventListener(ISSUES_EVENT, syncIssues);
+      window.removeEventListener(ISSUES_EVENT, handleIssuesChange);
     };
   }, []);
 
-  function handleVote(issueId: string, direction: "up" | "down") {
-    updateIssue(issueId, (issue) => {
-      if (direction === "up") {
-        return {
-          ...issue,
-          upvotes: issue.upvotes + 1,
-          supporterCount: issue.supporterCount + 1,
-          consensusScore: Math.min(99, issue.consensusScore + 1),
-          opposingViewSupport: Math.min(95, issue.opposingViewSupport + 0.5),
-        };
-      }
+  async function handleVote(issueId: string, direction: "up" | "down") {
+    const updated = await voteOnIssue(issueId, direction);
+    if (!updated) {
+      return;
+    }
 
-      return {
-        ...issue,
-        downvotes: issue.downvotes + 1,
-        consensusScore: Math.max(0, issue.consensusScore - 1),
-        opposingViewSupport: Math.max(5, issue.opposingViewSupport - 0.5),
-      };
-    });
+    setIssues((current) => current.map((issue) => (issue.id === updated.id ? updated : issue)));
   }
 
   return (
     <div className="space-y-8 pb-10">
       <AuthModal />
 
-      <div className="relative flex gap-6">
-        <div
-          className={`fixed inset-0 z-30 bg-slate-950/35 transition-opacity duration-300 lg:hidden ${
-            sidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-          }`}
-          onClick={() => setSidebarOpen(false)}
+      <div className="relative flex gap-5 xl:gap-7">
+        <AppSidebar
+          currentUser={currentUser}
+          activeLabel="Consensus feed"
+          secondaryStat={{
+            label: "Popular now",
+            value: `${summary.issueCount}`,
+            description: "Threads currently ranking across the main feed.",
+          }}
         />
 
-        <aside
-          className={`fixed inset-y-0 left-0 z-40 border-r border-slate-200/70 bg-white/95 shadow-2xl backdrop-blur-xl transition-all duration-300 lg:sticky lg:top-24 lg:h-[calc(100vh-7rem)] lg:translate-x-0 lg:rounded-[28px] lg:border lg:shadow-[0_20px_60px_-35px_rgba(15,23,42,0.35)] ${
-            sidebarExpanded ? "w-72" : "w-[78px]"
-          } ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-        >
-          <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200/70 px-4 py-5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!sidebarExpanded) {
-                    setSidebarOpen((current) => !current);
-                    setSidebarExpanded(true);
-                    return;
-                  }
+        <main className="min-w-0 flex-1 space-y-8 lg:pl-0">
+          <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/90 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.22)]">
+            <div className="flex gap-2 overflow-x-auto px-4 py-4 xl:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {topCategories.map((category) => {
+                const Icon = category.icon;
+                const isActive = activeCategory === category.value;
 
-                  setSidebarExpanded((current) => !current);
-                  if (sidebarOpen) {
-                    setSidebarOpen(false);
-                  }
-                }}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                aria-label="Toggle sidebar"
-              >
-                {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </button>
-
-              {sidebarExpanded ? (
-                <span className="pr-2 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Bridge status</span>
-              ) : null}
-            </div>
-
-            <div className="px-3 py-4">
-              <div className="rounded-[24px] border border-slate-200/80 bg-slate-50 p-4">
-                <div className="flex items-center gap-3 rounded-2xl">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
-                    {bridgeStatus.displayName[0]?.toUpperCase() ?? "G"}
-                  </div>
-                  {sidebarExpanded ? (
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">{bridgeStatus.displayName}</div>
-                      <div className="text-xs text-slate-500">Bridge Status snapshot</div>
-                    </div>
-                  ) : null}
-                </div>
-
-                {sidebarExpanded ? (
-                  <div className="mt-4 space-y-3">
-                    <div className="rounded-2xl bg-white px-3 py-3 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Reputation Score
-                        </div>
-                        <Gauge className="h-4 w-4 text-sky-600" />
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">{bridgeStatus.reputationScore}</div>
-                      <div className="mt-2 text-sm text-slate-500">
-                        Bayesian reliability: {Math.round(bridgeStatus.reliability * 100)}% alignment with later consensus
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-white px-3 py-3 shadow-sm">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Cluster Badge</div>
-                      <div className="mt-2 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">
-                        {bridgeStatus.cluster}
-                      </div>
-                      <div className="mt-2 text-sm text-slate-500">
-                        Cross-cluster agreement improves when your votes bridge beyond this cluster.
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex-1 space-y-3 px-3 py-2">
-              {sidebarLinks.map((item, index) => {
-                const Icon = item.icon;
                 return (
                   <button
-                    key={item.label}
+                    key={`${category.label}-${category.value}`}
                     type="button"
-                    className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
-                      index === 0
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    onClick={() => setActiveCategory(category.value)}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition ${
+                      isActive
+                        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                        : "border-transparent bg-slate-100 text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900"
                     }`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    {sidebarExpanded ? <span className="text-sm font-medium">{item.label}</span> : null}
+                    <Icon className="h-4 w-4" />
+                    {category.label}
                   </button>
                 );
               })}
             </div>
-
-            {sidebarExpanded ? (
-              <div className="border-t border-slate-200/70 px-4 py-5">
-                <div className="rounded-[24px] bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Create a post</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Publish a new issue from the dedicated submit page and let the consensus feed rank it.
-                  </p>
-                  {currentUser ? (
-                    <a
-                      href="/submit"
-                      className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                    >
-                      Start thread
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openAuthModal("signin")}
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                    >
-                      <LockKeyhole className="h-4 w-4" />
-                      Sign in to post
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : null}
           </div>
-        </aside>
 
-        <main className="min-w-0 flex-1 space-y-8 lg:pl-0">
-          <section className="relative overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(135deg,#172554_0%,#1d4ed8_52%,#f97316_100%)] px-6 py-8 text-white shadow-[0_35px_90px_-45px_rgba(15,23,42,0.8)] sm:px-8 sm:py-10">
+          <section className="relative overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(135deg,#172554_0%,#1d4ed8_52%,#f97316_100%)] px-6 py-8 text-white shadow-[0_35px_90px_-45px_rgba(15,23,42,0.8)] sm:px-8 sm:py-10 xl:px-10 xl:py-10">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.26),transparent_22%)]" />
-            <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.9fr]">
-              <div className="space-y-5">
+            <div className="relative grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.9fr)] 2xl:grid-cols-[minmax(0,1.45fr)_430px]">
+              <div className="space-y-5 xl:space-y-6">
                 <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSidebarOpen(true);
-                      setSidebarExpanded(true);
-                    }}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/20 lg:hidden"
-                    aria-label="Open sidebar"
-                  >
-                    <Menu className="h-5 w-5" />
-                  </button>
                   <Badge className="w-fit bg-white/15 text-orange-50 backdrop-blur" variant="secondary">
                     Consensus Feed
                   </Badge>
                 </div>
                 <div className="space-y-4">
-                  <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
-                    Ranked by agreement that actually bridges across different communities.
+                  <h1 className="max-w-4xl text-4xl font-semibold tracking-tight sm:text-5xl xl:text-[4.25rem] xl:leading-[1.02]">
+                    Follow the strongest, most sourceable threads first.
                   </h1>
-                  <p className="max-w-2xl text-base leading-7 text-blue-50/90 sm:text-lg">
-                    The default feed is sorted by Consensus Score, not raw virality. Posts rise when they attract
-                    durable support from opposing social clusters, and every thread exposes a counter-perspective to
-                    break the scroll-hole effect.
+                  <p className="max-w-3xl text-base leading-7 text-blue-50/90 sm:text-lg xl:text-[1.38rem] xl:leading-9">
+                    The main feed favors clear titles, stronger agreement, and active discussion over raw virality.
+                    Open any thread to vote, read comments, and review the supporting links attached to the post.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -318,15 +191,15 @@ export default function Home() {
                 </div>
               </div>
 
-              <Card className="border-white/15 bg-white/10 text-white shadow-none backdrop-blur-xl">
-                <CardHeader className="pb-4">
+              <Card className="h-full border-white/15 bg-white/10 text-white shadow-none backdrop-blur-xl">
+                <CardHeader className="pb-4 xl:pb-5">
                   <CardDescription className="flex items-center gap-2 text-blue-50">
                     <TrendingUp className="h-4 w-4" />
-                    Bridge overview
+                    Feed overview
                   </CardDescription>
-                  <CardTitle className="text-3xl text-white">{summary.averageConsensus} avg consensus</CardTitle>
+                  <CardTitle className="text-3xl text-white">{summary.averageConsensus} avg agreement</CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-4">
+                <CardContent className="grid grid-cols-2 gap-4 xl:gap-5">
                   <MetricTile label="Live issues" value={`${summary.issueCount}`} icon={<Layers3 className="h-4 w-4" />} />
                   <MetricTile label="Total votes" value={`${summary.totalVotes}`} icon={<BarChart3 className="h-4 w-4" />} />
                   <MetricTile label="Comments" value={`${summary.totalComments}`} icon={<MessageSquareText className="h-4 w-4" />} />
@@ -340,37 +213,47 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.35fr_0.72fr]">
+          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.58fr)_320px] 2xl:grid-cols-[minmax(0,1.68fr)_340px]">
             <div id="feed" className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Primary View</div>
-                  <h2 className="mt-1 text-2xl font-semibold text-slate-950">Consensus Feed</h2>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-950">
+                    {activeCategory === "All" ? "Consensus Feed" : `${activeCategory} threads`}
+                  </h2>
                   <p className="mt-2 text-sm text-slate-500">
-                    Default ranking favors posts with higher agreement across diverse clusters, then by cross-cluster support.
+                    {activeCategory === "All"
+                      ? "Default ranking favors posts with higher agreement across diverse clusters, then by cross-cluster support."
+                      : `Showing ${activeCategory.toLowerCase()} posts ranked by agreement and discussion quality.`}
                   </p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm">
                   <Flame className="h-4 w-4 text-orange-500" />
-                  Sorted by Consensus Score
+                  Sorted by agreement
                 </div>
               </div>
 
-              {consensusFeed.map((issue) => (
-                <IssueCard key={issue.id} issue={issue} onVote={handleVote} />
-              ))}
+              {consensusFeed.length > 0 ? (
+                consensusFeed.map((issue) => <IssueCard key={issue.id} issue={issue} onVote={handleVote} />)
+              ) : (
+                <Card className="border-slate-200/80 bg-white/90 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.22)]">
+                  <CardContent className="p-8 text-sm text-slate-600">
+                    No threads are available in this category yet. Try another section or create the first one.
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             <div className="space-y-6">
-              <Card className="border-slate-200/80 bg-white/90 shadow-[0_20px_60px_-35px_rgba(15,23,42,0.35)]">
+              <Card className="border-slate-200/80 bg-white/90 shadow-[0_20px_60px_-35px_rgba(15,23,42,0.35)] xl:sticky xl:top-24">
                 <CardHeader>
-                  <Badge variant="secondary" className="w-fit">How ranking works</Badge>
-                  <CardTitle className="text-xl">Bridge mechanics</CardTitle>
+                  <Badge variant="secondary" className="w-fit">Thread tips</Badge>
+                  <CardTitle className="text-xl">Before you publish</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm text-slate-600">
-                  <p>Consensus Score promotes posts with strong agreement across opposing user clusters.</p>
-                  <p>Bridge Meter highlights how much support comes from viewpoints outside a single echo chamber.</p>
-                  <p>Counter-Perspective forces a quick encounter with a high-ranked opposing argument before scrolling on.</p>
+                  <p>Use a specific title so readers know exactly what claim or question they are evaluating.</p>
+                  <p>Longer thread bodies perform better when they explain the claim, the context, and the tradeoffs.</p>
+                  <p>Include at least two bibliography links so readers can inspect the evidence directly.</p>
                 </CardContent>
               </Card>
 
@@ -406,15 +289,15 @@ function MetricTile({
 }: {
   label: string;
   value: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/15 bg-slate-950/20 p-4">
+    <div className="rounded-[22px] border border-white/15 bg-slate-950/20 p-4 xl:p-5">
       <div className="flex items-center justify-between text-blue-50">
-        <span className="text-sm">{label}</span>
+        <span className="text-sm xl:text-[15px]">{label}</span>
         {icon}
       </div>
-      <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
+      <div className="mt-3 text-2xl font-semibold text-white xl:text-[2rem]">{value}</div>
     </div>
   );
 }

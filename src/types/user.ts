@@ -3,6 +3,6 @@ export interface User {
   username: string;
   email: string;
   avatar?: string;
-  authProvider?: "local" | "google";
+  authProvider?: "email" | "google";
   createdAt: Date;
 }

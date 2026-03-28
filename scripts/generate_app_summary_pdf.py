@@ -88,9 +88,9 @@ def main() -> None:
 
     what_it_is = (
         "Bridge Protocol is a Next.js App Router prototype for civic issue discussion. The current app "
-        "presents a consensus-ranked issue feed, a dedicated post composer, an issue detail view, a profile "
-        "page, and a browser-local authentication flow. Core interactions run from client state and "
-        "localStorage, with Supabase helpers and schema files included for a future backend migration."
+        "presents a consensus-ranked issue feed, a dedicated post composer, an issue detail view, and a "
+        "browser-local authentication flow. Issue and comment persistence now run against a local Supabase "
+        "CLI stack, with a browser-local fallback only when Supabase is not configured."
     )
 
     who_its_for = (
@@ -106,20 +106,21 @@ def main() -> None:
         "Auth modal supports local email/password demo accounts plus optional Google Identity sign-in when <font face='Courier'>NEXT_PUBLIC_GOOGLE_CLIENT_ID</font> is configured.",
         "Issue detail page expands the main thread into a richer discussion view with comments and consensus context.",
         "Sidebar UI exposes a lightweight Bridge Status concept with reputation, reliability, and social-cluster labeling directly inside the feed.",
-        "Issue and auth updates are persisted in browser storage so feed changes survive refresh without a server roundtrip.",
+        "Issue creation, voting, and comments persist in the local Supabase database seeded by the CLI workflow.",
     ]
 
     architecture = [
         "<b>Framework:</b> Next.js App Router with React and TypeScript; Tailwind CSS powers styling and the repo includes shadcn-style UI primitives under <font face='Courier'>src/components/ui</font>.",
         "<b>Entry points:</b> <font face='Courier'>src/app/page.tsx</font> for the consensus feed, <font face='Courier'>src/app/submit/page.tsx</font> for thread creation, and <font face='Courier'>src/app/issues/[id]/page.tsx</font> for per-issue detail.",
         "<b>Auth flow:</b> <font face='Courier'>src/lib/auth.ts</font> stores accounts and the active session in localStorage and emits browser events consumed by <font face='Courier'>src/components/auth/AuthModal.tsx</font>.",
-        "<b>Issue flow:</b> <font face='Courier'>src/lib/issues.ts</font> seeds initial issue threads, persists mutations in localStorage, and emits <font face='Courier'>ISSUES_EVENT</font> so the feed updates reactively.",
+        "<b>Issue flow:</b> <font face='Courier'>src/lib/issues.ts</font> loads and mutates issues through Supabase first, then falls back to local seeded data if the local stack is unavailable, and emits <font face='Courier'>ISSUES_EVENT</font> so the feed updates reactively.",
         "<b>Data model:</b> <font face='Courier'>IssuePost</font>, <font face='Courier'>IssueComment</font>, social clusters, and counter-perspectives live in <font face='Courier'>src/types/issue.ts</font>.",
-        "<b>Storage model:</b> the current product is intentionally browser-local; no active backend integration is required for the app to run.",
+        "<b>Storage model:</b> the repo uses Supabase CLI config in <font face='Courier'>supabase/config.toml</font>, a migration in <font face='Courier'>supabase/migrations</font>, and seed data in <font face='Courier'>supabase/seed.sql</font> for local backend development.",
     ]
 
     getting_started = [
         "Run <font face='Courier'>npm install</font>.",
+        "Start the local backend with <font face='Courier'>npx supabase start</font>.",
         "Start development with <font face='Courier'>npm run dev</font>.",
         "Open <font face='Courier'>http://localhost:3000</font>.",
         "Use the home feed to browse consensus-ranked issues and <font face='Courier'>/submit</font> to create a new thread after signing in.",
